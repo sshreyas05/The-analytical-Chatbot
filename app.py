@@ -6,6 +6,7 @@ import numpy as np
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 from newspaper import Article
+from yfinance.exceptions import YFRateLimitError
 
 # ================= CONFIG =================
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -27,21 +28,26 @@ st.title("📊 WHY-aware Stock RAG Chatbot")
 st.caption("Explains WHAT happened to a stock and WHY (using price + news)")
 
 # ================= DATA LOADERS =================
-def load_stock_data(ticker, period="1y"):
-    stock = yf.Ticker(ticker)
-    hist = stock.history(period=period)
+@st.cache_data(ttl=3600)  # cache for 1 hour
+def load_stock_data(ticker, period="6mo"):
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period=period)
 
-    docs = []
-    for date, row in hist.iterrows():
-        docs.append(
-            f"Date: {date.date()}, "
-            f"Open: {row['Open']:.2f}, "
-            f"High: {row['High']:.2f}, "
-            f"Low: {row['Low']:.2f}, "
-            f"Close: {row['Close']:.2f}, "
-            f"Volume: {int(row['Volume'])}"
-        )
-    return docs
+        documents = []
+        for date, row in hist.iterrows():
+            documents.append(
+                f"Date: {date.date()}, "
+                f"Open: {row['Open']:.2f}, "
+                f"High: {row['High']:.2f}, "
+                f"Low: {row['Low']:.2f}, "
+                f"Close: {row['Close']:.2f}, "
+                f"Volume: {int(row['Volume'])}"
+            )
+        return documents
+
+    except YFRateLimitError:
+        return None
 
 
 def load_stock_news(ticker, max_articles=10):
@@ -153,10 +159,20 @@ if "bot" not in st.session_state:
 # ================= LOAD DATA =================
 if load_button:
     with st.spinner("Fetching price data..."):
-        price_docs = load_stock_data(ticker)
+     price_docs = load_stock_data(ticker)
 
-    if not price_docs:
-        st.error("❌ No price data found. Check the ticker symbol.")
+if price_docs is None:
+    st.warning(
+        "⚠️ Yahoo Finance rate limit hit.\n\n"
+        "Please wait a few minutes and try again.\n"
+        "This is a Yahoo-side limitation, not an app error."
+    )
+    st.stop()
+
+if not price_docs:
+    st.error("❌ No price data found. Check the ticker symbol.")
+    st.stop()
+
     else:
         with st.spinner("Fetching news..."):
             news_docs = load_stock_news(ticker)
