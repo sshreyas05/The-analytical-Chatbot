@@ -173,7 +173,7 @@ if not price_docs:
     st.error("❌ No price data found. Check the ticker symbol.")
     st.stop()
 
-    else:
+else:
         with st.spinner("Fetching news..."):
             news_docs = load_stock_news(ticker)
 
