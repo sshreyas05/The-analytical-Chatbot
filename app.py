@@ -161,7 +161,7 @@ if load_button:
     with st.spinner("Fetching price data..."):
      price_docs = load_stock_data(ticker)
 
-if price_docs is None:
+    if price_docs is None:
     st.warning(
         "⚠️ Yahoo Finance rate limit hit.\n\n"
         "Please wait a few minutes and try again.\n"
@@ -169,11 +169,11 @@ if price_docs is None:
     )
     st.stop()
 
-if not price_docs:
+    if not price_docs:
     st.error("❌ No price data found. Check the ticker symbol.")
     st.stop()
 
-else:
+    else:
         with st.spinner("Fetching news..."):
             news_docs = load_stock_news(ticker)
 
