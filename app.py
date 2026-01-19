@@ -3,6 +3,7 @@ import streamlit as st
 import yfinance as yf
 import faiss
 import numpy as np
+import pandas as pd
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 from newspaper import Article
@@ -15,7 +16,7 @@ EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 CHAT_MODEL = "llama-3.3-70b-versatile"
 
 VECTOR_DIM = 384
-TOP_K = 5
+TOP_K = 3
 
 # ================= PAGE SETUP =================
 st.set_page_config(
@@ -79,7 +80,13 @@ def load_stock_data(ticker, period="6mo"):
     except YFRateLimitError:
         return None
 
-def load_stock_news(ticker, max_articles=5):
+@st.cache_data(ttl=3600)
+def load_price_dataframe(ticker, period="1mo"):
+    stock = yf.Ticker(ticker)
+    hist = stock.history(period=period)
+    return hist.reset_index()
+
+def load_stock_news(ticker, max_articles=2):
     urls = [f"https://finance.yahoo.com/quote/{ticker}/news"]
     articles = []
 
@@ -114,7 +121,7 @@ class RAGChatbot:
         context = (
             "=== PRICE DATA ===\n" + "\n".join(price_ctx) +
             "\n\n=== NEWS DATA ===\n" + "\n".join(news_ctx)
-        )
+        )[:4000]  # hard safety cap
 
         prompt = f"""
 You are a financial analyst.
@@ -187,6 +194,18 @@ if load_button:
         st.session_state.bot = RAGChatbot(price_store, news_store)
 
     st.success(f"✅ Data loaded for {ticker}")
+
+    # ================= PRICE CHART =================
+    st.subheader("📈 Price movement (last 30 days)")
+    price_df = load_price_dataframe(ticker)
+
+    if not price_df.empty:
+        st.line_chart(
+            price_df.set_index("Date")["Close"],
+            height=300
+        )
+    else:
+        st.info("No chart data available.")
 
 # ================= CHAT =================
 if st.session_state.bot:
