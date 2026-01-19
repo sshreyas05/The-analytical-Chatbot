@@ -12,14 +12,14 @@ from yfinance.exceptions import YFRateLimitError
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-CHAT_MODEL = "llama-3.3-70b-versatile"
+CHAT_MODEL = "llama3-8b-8192"
 
 VECTOR_DIM = 384
 TOP_K = 5
 
 # ================= PAGE SETUP =================
 st.set_page_config(
-    page_title="Stock RAG Chatbot",
+    page_title="WHY-aware Stock RAG Chatbot",
     page_icon="📊",
     layout="wide"
 )
@@ -27,8 +27,38 @@ st.set_page_config(
 st.title("📊 WHY-aware Stock RAG Chatbot")
 st.caption("Explains WHAT happened to a stock and WHY (using price + news)")
 
+# ================= SESSION STATE =================
+if "bot" not in st.session_state:
+    st.session_state.bot = None
+
+# ================= EMBEDDINGS =================
+@st.cache_resource
+def load_embedder():
+    return SentenceTransformer(EMBEDDING_MODEL)
+
+embed_model = load_embedder()
+
+def embed_texts(texts):
+    return embed_model.encode(texts, convert_to_numpy=True)
+
+# ================= VECTOR STORE =================
+class VectorStore:
+    def __init__(self):
+        self.index = faiss.IndexFlatL2(VECTOR_DIM)
+        self.documents = []
+
+    def add(self, embeddings, docs):
+        self.index.add(embeddings.astype("float32"))
+        self.documents.extend(docs)
+
+    def search(self, query_embedding, k):
+        _, I = self.index.search(
+            query_embedding.reshape(1, -1).astype("float32"), k
+        )
+        return [self.documents[i] for i in I[0]]
+
 # ================= DATA LOADERS =================
-@st.cache_data(ttl=3600)  # cache for 1 hour
+@st.cache_data(ttl=3600)
 def load_stock_data(ticker, period="6mo"):
     try:
         stock = yf.Ticker(ticker)
@@ -49,8 +79,7 @@ def load_stock_data(ticker, period="6mo"):
     except YFRateLimitError:
         return None
 
-
-def load_stock_news(ticker, max_articles=10):
+def load_stock_news(ticker, max_articles=5):
     urls = [f"https://finance.yahoo.com/quote/{ticker}/news"]
     articles = []
 
@@ -67,35 +96,6 @@ def load_stock_news(ticker, max_articles=10):
             pass
 
     return articles[:max_articles]
-
-
-# ================= EMBEDDINGS =================
-@st.cache_resource
-def load_embedder():
-    return SentenceTransformer(EMBEDDING_MODEL)
-
-embed_model = load_embedder()
-
-def embed_texts(texts):
-    return embed_model.encode(texts, convert_to_numpy=True)
-
-
-# ================= VECTOR STORE =================
-class VectorStore:
-    def __init__(self):
-        self.index = faiss.IndexFlatL2(VECTOR_DIM)
-        self.documents = []
-
-    def add(self, embeddings, docs):
-        self.index.add(embeddings.astype("float32"))
-        self.documents.extend(docs)
-
-    def search(self, query_embedding, k):
-        _, I = self.index.search(
-            query_embedding.reshape(1, -1).astype("float32"), k
-        )
-        return [self.documents[i] for i in I[0]]
-
 
 # ================= RAG CHATBOT =================
 client = Groq(api_key=GROQ_API_KEY)
@@ -140,7 +140,6 @@ Question:
 
         return response.choices[0].message.content
 
-
 # ================= SIDEBAR =================
 st.sidebar.header("⚙️ Settings")
 
@@ -152,48 +151,42 @@ ticker = st.sidebar.text_input(
 
 load_button = st.sidebar.button("📥 Load Stock Data")
 
-# ================= STATE =================
-if "bot" not in st.session_state:
-    st.session_state.bot = None
-
 # ================= LOAD DATA =================
 if load_button:
     with st.spinner("Fetching price data..."):
-     price_docs = load_stock_data(ticker)
+        price_docs = load_stock_data(ticker)
 
     if price_docs is None:
-    st.warning(
-        "⚠️ Yahoo Finance rate limit hit.\n\n"
-        "Please wait a few minutes and try again.\n"
-        "This is a Yahoo-side limitation, not an app error."
-    )
-    st.stop()
+        st.warning(
+            "⚠️ Yahoo Finance rate limit hit.\n\n"
+            "Please wait a few minutes and try again."
+        )
+        st.stop()
 
     if not price_docs:
-    st.error("❌ No price data found. Check the ticker symbol.")
-    st.stop()
+        st.error("❌ No price data found. Check the ticker symbol.")
+        st.stop()
 
-    else:
-        with st.spinner("Fetching news..."):
-            news_docs = load_stock_news(ticker)
+    with st.spinner("Fetching news..."):
+        news_docs = load_stock_news(ticker)
 
-        with st.spinner("Embedding & indexing..."):
-            price_store = VectorStore()
-            news_store = VectorStore()
+    with st.spinner("Embedding & indexing..."):
+        price_store = VectorStore()
+        news_store = VectorStore()
 
-            price_store.add(embed_texts(price_docs), price_docs)
+        price_store.add(embed_texts(price_docs), price_docs)
 
-            if news_docs:
-                news_store.add(embed_texts(news_docs), news_docs)
-            else:
-                news_store.add(
-                    embed_texts(["No relevant news found."]),
-                    ["No relevant news found."]
-                )
+        if news_docs:
+            news_store.add(embed_texts(news_docs), news_docs)
+        else:
+            news_store.add(
+                embed_texts(["No relevant news found."]),
+                ["No relevant news found."]
+            )
 
-            st.session_state.bot = RAGChatbot(price_store, news_store)
+        st.session_state.bot = RAGChatbot(price_store, news_store)
 
-        st.success(f"✅ Data loaded for {ticker}")
+    st.success(f"✅ Data loaded for {ticker}")
 
 # ================= CHAT =================
 if st.session_state.bot:
@@ -214,3 +207,4 @@ if st.session_state.bot:
             st.warning("Please enter a question.")
 else:
     st.info("👈 Enter a ticker and click **Load Stock Data** to begin.")
+
