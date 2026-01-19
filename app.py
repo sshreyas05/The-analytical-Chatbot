@@ -12,7 +12,7 @@ from yfinance.exceptions import YFRateLimitError
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-CHAT_MODEL = "llama3-8b-8192"
+CHAT_MODEL = "llama-3.3-70b-versatile"
 
 VECTOR_DIM = 384
 TOP_K = 5
