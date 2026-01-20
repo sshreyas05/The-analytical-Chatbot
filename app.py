@@ -235,11 +235,11 @@ ticker = st.sidebar.text_input(
 load_button = st.sidebar.button("📥 Load Stock Data")
 
 # ================= LOAD DATA =================
-   if load_button:
+if load_button:
    with st.spinner("Fetching price data..."):
         price_docs = load_stock_data(ticker)
 
-   if price_docs is None:
+    if price_docs is None:
     st.error(
         "❌ Unable to fetch live price data.\n\n"
         "Please check the ticker symbol or try again later."
