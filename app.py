@@ -1,13 +1,14 @@
 import os
 import streamlit as st
-import yfinance as yf
+import requests
+from datetime import datetime, timedelta
 import faiss
 import numpy as np
 import pandas as pd
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 from newspaper import Article
-from yfinance.exceptions import YFRateLimitError
+
 
 # ================= CONFIG =================
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -59,36 +60,111 @@ class VectorStore:
         return [self.documents[i] for i in I[0]]
 
 # ================= DATA LOADERS =================
-@st.cache_data(ttl=3600)
-def load_stock_data(ticker, period="6mo"):
-    try:
-        stock = yf.Ticker(ticker)
-        hist = stock.history(period=period)
+FINNHUB_API_KEY = os.getenv("d5nq9ehr01qma2b5n4mgd5nq9ehr01qma2b5n4n0")
 
-        documents = []
-        for date, row in hist.iterrows():
-            documents.append(
-                f"Date: {date.date()}, "
-                f"Open: {row['Open']:.2f}, "
-                f"High: {row['High']:.2f}, "
-                f"Low: {row['Low']:.2f}, "
-                f"Close: {row['Close']:.2f}, "
-                f"Volume: {int(row['Volume'])}"
-            )
-        return documents
+@st.cache_data(ttl=900)  # cache for 15 minutes
+def load_stock_data(ticker):
+    """
+    Fetch daily OHLCV data for last 30 days from Finnhub
+    """
+    end = datetime.utcnow()
+    start = end - timedelta(days=40)
 
-    except YFRateLimitError:
+    url = (
+        "https://finnhub.io/api/v1/stock/candle"
+        f"?symbol={ticker}"
+        f"&resolution=D"
+        f"&from={int(start.timestamp())}"
+        f"&to={int(end.timestamp())}"
+        f"&token={FINNHUB_API_KEY}"
+    )
+
+    r = requests.get(url, timeout=10)
+    data = r.json()
+
+    if data.get("s") != "ok":
         return None
 
-@st.cache_data(ttl=3600)
-def load_price_dataframe(ticker, period="1mo"):
-    stock = yf.Ticker(ticker)
-    hist = stock.history(period=period)
-    return hist.reset_index()
+    documents = []
+    for i in range(len(data["t"])):
+        date = datetime.utcfromtimestamp(data["t"][i]).date()
+        documents.append(
+            f"Date: {date}, "
+            f"Open: {data['o'][i]:.2f}, "
+            f"High: {data['h'][i]:.2f}, "
+            f"Low: {data['l'][i]:.2f}, "
+            f"Close: {data['c'][i]:.2f}, "
+            f"Volume: {int(data['v'][i])}"
+        )
 
-def load_stock_news(ticker, max_articles=2):
-    urls = [f"https://finance.yahoo.com/quote/{ticker}/news"]
-    articles = []
+    return documents
+
+
+@st.cache_data(ttl=900)
+def load_price_dataframe(ticker):
+    end = datetime.utcnow()
+    start = end - timedelta(days=40)
+
+    url = (
+        "https://finnhub.io/api/v1/stock/candle"
+        f"?symbol={ticker}"
+        f"&resolution=D"
+        f"&from={int(start.timestamp())}"
+        f"&to={int(end.timestamp())}"
+        f"&token={FINNHUB_API_KEY}"
+    )
+
+    r = requests.get(url, timeout=10)
+    data = r.json()
+
+    if data.get("s") != "ok":
+        return None
+
+    df = pd.DataFrame({
+        "Date": [datetime.utcfromtimestamp(t).date() for t in data["t"]],
+        "Close": data["c"]
+    })
+
+    return df
+
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
+
+@st.cache_data(ttl=900)  # refresh every 15 minutes
+def load_stock_news(ticker, max_articles=3):
+    """
+    Fetch near real-time company news from Finnhub
+    """
+    today = datetime.utcnow().date()
+    past = today - timedelta(days=7)
+
+    url = (
+        "https://finnhub.io/api/v1/company-news"
+        f"?symbol={ticker}"
+        f"&from={past}"
+        f"&to={today}"
+        f"&token={FINNHUB_API_KEY}"
+    )
+
+    try:
+        r = requests.get(url, timeout=10)
+        news = r.json()
+
+        if not isinstance(news, list):
+            return []
+
+        docs = []
+        for article in news[:max_articles]:
+            docs.append(
+                f"Headline: {article.get('headline')}\n"
+                f"Source: {article.get('source')}\n"
+                f"Summary: {article.get('summary')}"
+            )
+
+        return docs
+
+    except Exception:
+        return []
+
 
     for url in urls:
         try:
@@ -163,12 +239,12 @@ if load_button:
     with st.spinner("Fetching price data..."):
         price_docs = load_stock_data(ticker)
 
-    if price_docs is None:
-        st.warning(
-            "⚠️ Yahoo Finance rate limit hit.\n\n"
-            "Please wait a few minutes and try again."
-        )
-        st.stop()
+   if price_docs is None:
+    st.error(
+        "❌ Unable to fetch live price data.\n\n"
+        "Please check the ticker symbol or try again later."
+    )
+    st.stop()
 
     if not price_docs:
         st.error("❌ No price data found. Check the ticker symbol.")
