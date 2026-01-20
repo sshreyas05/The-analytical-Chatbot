@@ -63,29 +63,33 @@ class VectorStore:
 FINNHUB_API_KEY = os.getenv("d5nq9ehr01qma2b5n4mgd5nq9ehr01qma2b5n4n0")
 
 @st.cache_data(ttl=900)  # cache for 15 minutes
+@st.cache_data(ttl=300)
 def load_stock_data(ticker):
     """
-    Fetch daily OHLCV data for last 30 days from Finnhub
+    Uses Finnhub QUOTE endpoint (cloud-safe).
+    Builds a minimal price context instead of full candles.
     """
-    end = datetime.utcnow()
-    start = end - timedelta(days=40)
-
     url = (
-        "https://finnhub.io/api/v1/stock/candle"
-        f"?symbol={ticker}"
-        f"&resolution=D"
-        f"&from={int(start.timestamp())}"
-        f"&to={int(end.timestamp())}"
-        f"&token={FINNHUB_API_KEY}"
+        "https://finnhub.io/api/v1/quote"
+        f"?symbol={ticker}&token={FINNHUB_API_KEY}"
     )
 
     r = requests.get(url, timeout=10)
     data = r.json()
 
-    if data.get("s") != "ok":
+    if "c" not in data or data["c"] == 0:
         return None
 
-    documents = []
+    documents = [
+        f"Current Price: {data['c']}",
+        f"Open: {data['o']}",
+        f"High: {data['h']}",
+        f"Low: {data['l']}",
+        f"Previous Close: {data['pc']}"
+    ]
+
+    return documents
+
     for i in range(len(data["t"])):
         date = datetime.utcfromtimestamp(data["t"][i]).date()
         documents.append(
