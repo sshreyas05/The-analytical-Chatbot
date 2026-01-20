@@ -235,8 +235,8 @@ ticker = st.sidebar.text_input(
 load_button = st.sidebar.button("📥 Load Stock Data")
 
 # ================= LOAD DATA =================
-if load_button:
-    with st.spinner("Fetching price data..."):
+   if load_button:
+   with st.spinner("Fetching price data..."):
         price_docs = load_stock_data(ticker)
 
    if price_docs is None:
