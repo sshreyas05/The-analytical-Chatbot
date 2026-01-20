@@ -236,15 +236,15 @@ load_button = st.sidebar.button("📥 Load Stock Data")
 
 # ================= LOAD DATA =================
 if load_button:
-   with st.spinner("Fetching price data..."):
+    with st.spinner("Fetching price data..."):
         price_docs = load_stock_data(ticker)
 
     if price_docs is None:
-    st.error(
-        "❌ Unable to fetch live price data.\n\n"
-        "Please check the ticker symbol or try again later."
-    )
-    st.stop()
+        st.error(
+            "❌ Unable to fetch live price data.\n\n"
+            "Please check the ticker symbol or try again later."
+        )
+        st.stop()
 
     if not price_docs:
         st.error("❌ No price data found. Check the ticker symbol.")
@@ -271,17 +271,18 @@ if load_button:
 
     st.success(f"✅ Data loaded for {ticker}")
 
-    # ================= PRICE CHART =================
+    # -------- PRICE CHART (LAST 30 DAYS) --------
     st.subheader("📈 Price movement (last 30 days)")
     price_df = load_price_dataframe(ticker)
 
-    if not price_df.empty:
+    if price_df is not None and not price_df.empty:
         st.line_chart(
             price_df.set_index("Date")["Close"],
             height=300
         )
     else:
         st.info("No chart data available.")
+
 
 # ================= CHAT =================
 if st.session_state.bot:
